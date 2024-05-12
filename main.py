@@ -1,20 +1,15 @@
 import cv2
 import math
-import vlc
 import queue
 import random
 import threading
 from matplotlib.animation import FuncAnimation
-import numpy as np
-import pandas as pd
 import customtkinter as ctk
 import matplotlib.pyplot as plt
 
 from typing import List, TypedDict
 from sympy import symbols, lambdify
 from PIL import Image, ImageTk
-from moviepy.editor import concatenate_videoclips, VideoFileClip
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from sympy import symbols, lambdify
 
 class Member(TypedDict):
@@ -150,14 +145,9 @@ class App(ctk.CTk):
 
         self.worst_x_values = []
         self.worst_y_values = []
-        
-        self.video_instance = vlc.Instance("--vout", "dummy")
-        self.media_player = self.video_instance.media_player_new()
 
         self.canvas = ctk.CTkCanvas(self.chart_frame, bg="black")
         self.canvas.pack(expand=True, fill="both")
-
-        win_id = self.canvas.winfo_id()
 
         self.queue = queue.Queue()
 
@@ -197,7 +187,7 @@ class App(ctk.CTk):
         self.system_resolution = self.range / ((2 ** self.bits) - 1)
 
         # Lambdyfy the function
-        self.f = lambdify(self.x, "x * cos(x)")
+        self.f = lambdify(self.x, self.function_input.get())
 
         plt.figure(figsize=(10, 30))
         plt.yticks(range(math.ceil(self.f(self.a)), math.ceil(self.f(self.b)), 1))
@@ -228,10 +218,7 @@ class App(ctk.CTk):
             self._pode()
             self.make_chart(geneartion)
             print(f"Generation: {geneartion}")
-            # df = pd.DataFrame(self.population)
-            # print(df)
-        # plt.legend()
-        # plt.show()
+
         video_thread = threading.Thread(target=self.make_video)
         video_thread.start()
 
@@ -269,8 +256,6 @@ class App(ctk.CTk):
                     for i in range(len(member["binary_representation"])):
                         if random.randint(1, 100) <= self.mutation_rate_gene:
                             member["binary_representation"][i] = str(random.randint(0, 1))
-                # print("mutation \n")
-                # print(member["binary_representation"])
 
     def _pode(self):
         # Eliminar repetidos
@@ -324,10 +309,6 @@ class App(ctk.CTk):
         while self.vide_thread_flag:
             command = self.queue.get()
             if command == "reset":
-                # self.media = self.video_instance.media_new("final.mp4")
-                # print(self.media.get_mrl())
-                # self.media_player.set_media(self.media)
-                # self.media_player.play()
                 self.cap = cv2.VideoCapture("final.mp4")
                 self.update_image()
 
@@ -335,18 +316,13 @@ class App(ctk.CTk):
         ret, frame = self.cap.read()
 
         if ret:
-        # Convierte el frame de OpenCV en una imagen de PIL
             image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(image)
             image = ImageTk.PhotoImage(image)
-
-            # Muestra la imagen en el lienzo
             self.canvas.create_image(0, 0, anchor='nw', image=image)
 
-            # Guarda una referencia a la imagen para evitar que sea recolectada por el recolector de basura
             self.canvas.image = image
 
-            # Actualiza la imagen cada 100 ms
         self.after(100, self.update_image)
 
     def reset_video(self):
