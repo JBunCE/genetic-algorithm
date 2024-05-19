@@ -3,7 +3,8 @@ import math
 import queue
 import random
 import threading
-from matplotlib.animation import FuncAnimation
+import statistics
+import pandas as pd
 import customtkinter as ctk
 import matplotlib.pyplot as plt
 
@@ -11,6 +12,9 @@ from typing import List, TypedDict
 from sympy import symbols, lambdify
 from PIL import Image, ImageTk
 from sympy import symbols, lambdify
+from matplotlib.animation import FuncAnimation
+from pandastable import Table, TableModel
+
 
 class Member(TypedDict):
     binary_representation: List[str]
@@ -28,15 +32,26 @@ class App(ctk.CTk):
         self.title("Genetic Algorithm")
         self.geometry(f"{1366}x{768}")
 
+        pd.set_option('display.precision', 10)
+
         self.options_frame = ctk.CTkFrame(self)
         self.options_frame.pack(side="left", ipadx=10, ipady=10, fill="y", expand=False, padx=10, pady=10)
 
+        self.scroll_frame = ctk.CTkScrollableFrame(self)
+        self.scroll_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+
         self.chart_frame = ctk.CTkFrame(self)
-        self.chart_frame.pack(side="top", fill="both", expand=True, padx=10, pady=10)
+        self.chart_frame.pack(side="right", fill="both", expand=True, padx=10, pady=10)
+        
+        self.best_table_frame = ctk.CTkFrame(self.scroll_frame)
+        self.best_table_frame.pack(side="top", fill="both", ipadx=10, ipady=10, padx=10, pady=10)
 
-        self.progress_frame = ctk.CTkFrame(self)
-        self.progress_frame.pack(side="bottom", fill="x", expand=False, padx=10, pady=10)
+        self.median_table_frame = ctk.CTkFrame(self.scroll_frame)
+        self.median_table_frame.pack(side="top", fill="both", ipadx=10, ipady=10, padx=10, pady=10)
 
+        self.worst_table_frame = ctk.CTkFrame(self.scroll_frame)
+        self.worst_table_frame.pack(side="top",  fill="both", ipadx=10, ipady=10, padx=10, pady=10)
+    
         self.function_label = ctk.CTkLabel(self.options_frame, text="Function:")
         self.function_label.pack(pady=5, padx=10, anchor="w")
 
@@ -103,8 +118,8 @@ class App(ctk.CTk):
         self.start_button = ctk.CTkButton(self.options_frame, text="Start", command=self.initialization)
         self.start_button.pack(pady=5, padx=10, anchor="w")
 
-        self.prograss_bar = ctk.CTkProgressBar(self.progress_frame, width=200, height=20)
-        self.prograss_bar.pack(pady=5, padx=10, anchor="w", fill="x", expand=True)
+        self.prograss_bar = ctk.CTkProgressBar(self.chart_frame, width=200, height=20)
+        self.prograss_bar.pack(pady=5, padx=10, anchor="w", fill="x")
 
         self.prograss_bar.set(0)
 
@@ -115,16 +130,18 @@ class App(ctk.CTk):
         self.maximization = False
 
         # Solution Space
-        self.a = -8
-        self.b = 8
+        self.a = -24
+        self.b = 14
 
         self.initial_population = 10
-        self.population_size = 5
-        self.user_resolution = 0.2
-        self.number_of_generations = 100
+        self.population_size = 30
+        self.user_resolution = 0.076
+        self.number_of_generations = 200
         self.crossover_rate = 60
         self.mutation_rate = 50
         self.mutation_rate_gene = 70
+        self.percent_of_elitism = 5
+        self.breakpoint_line = 0
 
         # SYSTEM PARAMS
         self.range = 0
@@ -137,15 +154,31 @@ class App(ctk.CTk):
         self.f = None
 
         # chart
-        self.best_x_values = []
-        self.best_y_values = []
+        self.best_x_values: List[Member] = []
+        self.best_y_values: List[Member] = []
 
         self.median_x_values = []
         self.median_y_values = []
 
-        self.worst_x_values = []
-        self.worst_y_values = []
+        self.worst_x_values: List[Member] = []
+        self.worst_y_values: List[Member] = []
 
+        # Dataframes
+        self.best_df = pd.DataFrame({"m_index": [0], "x": [0], "fitness": [0], "binary": [""]}).astype({"m_index": int, "x": float, "fitness": str, "binary": str})
+        self.median_df = pd.DataFrame({"meadian": [0]}).astype({"meadian": str})
+        self.worst_df = pd.DataFrame({"m_index": [0], "x": [0], "fitness": [0], "binary": [""]}).astype({"m_index": int, "x": float, "fitness": str, "binary": str})
+
+        # Table
+        self.best_table_df = Table(self.best_table_frame, dataframe=self.best_df, showtoolbar=True, showstatusbar=True)
+        self.best_table_df.show()
+
+        self.worst_table = Table(self.worst_table_frame, dataframe=self.worst_df, showtoolbar=True, showstatusbar=True)
+        self.worst_table.show()
+
+        self.median_table = Table(self.median_table_frame, dataframe=self.median_df, showtoolbar=True, showstatusbar=True)
+        self.median_table.show()
+
+        # Video
         self.canvas = ctk.CTkCanvas(self.chart_frame, bg="black")
         self.canvas.pack(expand=True, fill="both")
 
@@ -168,16 +201,16 @@ class App(ctk.CTk):
         self.worst_y_values = []
 
         # Get values from inputs
-        self.a = float(self.a_interval_input.get())
-        self.b = float(self.b_interval_input.get())
+        # self.a = float(self.a_interval_input.get())
+        # self.b = float(self.b_interval_input.get())
 
-        self.initial_population = int(self.initial_population_input.get())
-        self.population_size = int(self.population_size_input.get())
-        self.user_resolution = float(self.user_resolution_input.get())
-        self.number_of_generations = int(self.number_of_generations_input.get())
-        self.crossover_rate = int(self.crossover_rate_input.get())
-        self.mutation_rate = int(self.mutation_rate_input.get())
-        self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
+        # self.initial_population = int(self.initial_population_input.get())
+        # self.population_size = int(self.population_size_input.get())
+        # self.user_resolution = float(self.user_resolution_input.get())
+        # self.number_of_generations = int(self.number_of_generations_input.get())
+        # self.crossover_rate = int(self.crossover_rate_input.get())
+        # self.mutation_rate = int(self.mutation_rate_input.get())
+        # self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
         self.maximization = self.maximization_checkbox.get()
 
         # Calculate Params
@@ -187,7 +220,8 @@ class App(ctk.CTk):
         self.system_resolution = self.range / ((2 ** self.bits) - 1)
 
         # Lambdyfy the function
-        self.f = lambdify(self.x, self.function_input.get())
+        # self.f = lambdify(self.x, self.function_input.get())
+        self.f = lambdify(self.x, "x * cos(x)")
 
         plt.figure(figsize=(10, 30))
         plt.yticks(range(math.ceil(self.f(self.a)), math.ceil(self.f(self.b)), 1))
@@ -200,6 +234,8 @@ class App(ctk.CTk):
             member["x"] = self.a + member["index"] * self.system_resolution
             member["fitness"] = 0
             self.population.append(member)
+        
+        self.breakpoint_line = random.randint(1, len(self.population[0]["binary_representation"]))
 
         # Member evaluation
         for member in self.population:
@@ -214,9 +250,17 @@ class App(ctk.CTk):
             self._crossover()
             self._mutation()
             self._evaluation()
+            
             self.sort()
-            self._pode()
-            self.make_chart(geneartion)
+            # Eliminar repetidos
+            seen = set()
+            self.population = [member for member in self.population if member["index"] not in seen and not seen.add(member["index"])]
+            self.sort()
+
+            fitness = [member["fitness"] for member in self.population]
+
+            self.make_chart(geneartion, mean=statistics.median(fitness))
+            self._pode(mean=statistics.median(fitness))
             print(f"Generation: {geneartion}")
 
         video_thread = threading.Thread(target=self.make_video)
@@ -230,24 +274,25 @@ class App(ctk.CTk):
                 member["fitness"] = self.f(member["x"])
 
     def _crossover(self):
-        best_member = self.population[0]
-        breakpoint_line = random.randint(1, len(best_member["binary_representation"]))
-        selected_members_to_crossover = random.sample(self.population, random.randint(0, len(self.population)))
+        # Make pairs
+        best_members = self.population[:2]
+        selected_members_to_crossover = self.population[2:]
 
         for selected_member in selected_members_to_crossover:
-            first_child = Member()
-            second_child = Member()
+            for best_member in best_members:
+                first_child = Member()
+                second_child = Member()
 
-            first_child["index"] = None
-            second_child["index"] = None
-            first_child["fitness"] = 0
-            second_child["fitness"] = 0
+                first_child["index"] = None
+                second_child["index"] = None
+                first_child["fitness"] = 0
+                second_child["fitness"] = 0
 
-            first_child["binary_representation"] = selected_member["binary_representation"][:breakpoint_line] + best_member["binary_representation"][breakpoint_line:]
-            second_child["binary_representation"] = selected_member["binary_representation"][breakpoint_line:] + best_member["binary_representation"][:breakpoint_line]
+                first_child["binary_representation"] = selected_member["binary_representation"][:self.breakpoint_line] + best_member["binary_representation"][self.breakpoint_line:]
+                second_child["binary_representation"] = selected_member["binary_representation"][self.breakpoint_line:] + best_member["binary_representation"][:self.breakpoint_line]
 
-            self.population.append(first_child)
-            self.population.append(second_child)
+                self.population.append(first_child)
+                self.population.append(second_child)
 
     def _mutation(self):
         for member in self.population:
@@ -257,32 +302,59 @@ class App(ctk.CTk):
                         if random.randint(1, 100) <= self.mutation_rate_gene:
                             member["binary_representation"][i] = str(random.randint(0, 1))
 
-    def _pode(self):
-        # Eliminar repetidos
-        seen = set()
-        self.population = [member for member in self.population if member["index"] not in seen and not seen.add(member["index"])]
+    def _pode(self, mean):
+        print(mean)
+        # Indice media [1, 2, 3] [3, 2, 1]
+        if self.maximization:
+            index_mean = next(i for i, d in reversed(list(enumerate(self.population))) if d["fitness"] >= mean)
+        else:
+            index_mean = next(i for i, d in reversed(list(enumerate(self.population))) if d["fitness"] <= mean)
 
-        # Eliminar peores
+        # Mantener tamanio de poblacion
+        self.population = self.population[:index_mean]
         self.population = self.population[:self.population_size]
         
     def sort(self):
         self.population = sorted(self.population, key=lambda x: x["fitness"], reverse=self.maximization)
 
-    def make_chart(self, generation):
+    def make_chart(self, generation, mean):
         self.best_x_values.append(generation)
-        self.best_y_values.append(self.population[0]["fitness"])
+        self.best_y_values.append(self.population[0])
+
+        df = pd.DataFrame({
+            "m_index": [v["index"] for v in self.best_y_values],
+            "x": [v["x"] for v in self.best_y_values],
+            "fitness": [str(v["fitness"]) for v in self.best_y_values],
+            "binary": ["".join(v["binary_representation"]) for v in self.best_y_values]
+        })
+        self.best_table_df.updateModel(TableModel(df))
+        self.best_table_df.redraw()
 
         self.median_x_values.append(generation)
-        self.median_y_values.append(self.population[len(self.population) // 2]["fitness"])
+        self.median_y_values.append(mean)
+
+        df = pd.DataFrame({
+            "meadian": [str(m) for m in self.median_y_values]
+        })
+        self.median_table.updateModel(TableModel(df))
+        self.median_table.redraw()
 
         self.worst_x_values.append(generation)
-        self.worst_y_values.append(self.population[-1]["fitness"])
+        self.worst_y_values.append(self.population[-1])
 
-        print(self.best_x_values)
-        print(self.best_y_values)
+        df = pd.DataFrame({
+            "m_index": [v["index"] for v in self.worst_y_values],
+            "x": [v["x"] for v in self.worst_y_values],
+            "fitness": [str(v["fitness"]) for v in self.worst_y_values],
+            "binary": ["".join(v["binary_representation"]) for v in self.worst_y_values]
+        })
+        self.worst_table.updateModel(TableModel(df))
+        self.worst_table.redraw()
+
+        self.prograss_bar.set((generation / self.number_of_generations) * 100)
 
     def make_video(self):
-        fig = plt.figure(figsize=(12, 7))
+        fig = plt.figure(figsize=(9.5, 9))
         self.ax = fig.add_subplot(111)
 
         animation = FuncAnimation(fig, self.update, frames=len(self.best_x_values), repeat=False)
@@ -298,12 +370,10 @@ class App(ctk.CTk):
 
         self.ax.set_xlim([0,self.number_of_generations])
 
-        self.ax.plot(self.best_x_values[:frame], self.best_y_values[:frame], label="Best", color="blue", marker=".")
-        self.ax.plot(self.median_x_values[:frame], self.median_y_values[:frame], label="Median", color="green", marker=".")
-        self.ax.plot(self.worst_x_values[:frame], self.worst_y_values[:frame], label="Worst", color="red", marker=".")
+        self.ax.plot(self.best_x_values[:frame], [d["fitness"] for d in self.best_y_values[:frame]], label="Best", color="blue", linestyle="-")
+        self.ax.plot(self.median_x_values[:frame], self.median_y_values[:frame], label="Median", color="green", linestyle="-")
+        self.ax.plot(self.worst_x_values[:frame], [d["fitness"] for d in self.worst_y_values[:frame]], label="Worst", color="red", linestyle="-")
         self.ax.legend(labels=["Best", "Median", "Worst"])
-
-        self.prograss_bar.set((frame / self.number_of_generations) * 100)
 
     def play_video(self):
         while self.vide_thread_flag:
