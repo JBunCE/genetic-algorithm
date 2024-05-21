@@ -2,6 +2,7 @@ import cv2
 import math
 import queue
 import random
+import warnings
 import threading
 import statistics
 import pandas as pd
@@ -14,7 +15,9 @@ from PIL import Image, ImageTk
 from sympy import symbols, lambdify
 from matplotlib.animation import FuncAnimation
 from pandastable import Table, TableModel
+from CTkMessagebox import CTkMessagebox
 
+warnings.filterwarnings(action='ignore')
 
 class Member(TypedDict):
     binary_representation: List[str]
@@ -94,11 +97,11 @@ class App(ctk.CTk):
         self.number_of_generations_input = ctk.CTkEntry(self.options_frame, placeholder_text="Enter number of generations here")
         self.number_of_generations_input.pack(padx=10, anchor="w")
 
-        self.crossover_rate_label = ctk.CTkLabel(self.options_frame, text="Crossover rate:")
-        self.crossover_rate_label.pack(pady=5, padx=10, anchor="w")
+        self.crossover_percent_label = ctk.CTkLabel(self.options_frame, text="Crossover percent")
+        self.crossover_percent_label.pack(pady=5, padx=10, anchor="w")
 
-        self.crossover_rate_input = ctk.CTkEntry(self.options_frame, placeholder_text="Enter crossover rate here")
-        self.crossover_rate_input.pack(padx=10, anchor="w")
+        self.crossover_percent_input = ctk.CTkEntry(self.options_frame, placeholder_text="Enter crossover percent here")
+        self.crossover_percent_input.pack(padx=10, anchor="w")
 
         self.mutation_rate_label = ctk.CTkLabel(self.options_frame, text="Mutation rate [member]:")
         self.mutation_rate_label.pack(pady=5, padx=10, anchor="w")
@@ -120,6 +123,7 @@ class App(ctk.CTk):
 
         self.prograss_bar = ctk.CTkProgressBar(self.chart_frame, width=200, height=20)
         self.prograss_bar.pack(pady=5, padx=10, anchor="w", fill="x")
+
 
         self.prograss_bar.set(0)
 
@@ -201,17 +205,27 @@ class App(ctk.CTk):
         self.worst_y_values = []
 
         # Get values from inputs
-        # self.a = float(self.a_interval_input.get())
-        # self.b = float(self.b_interval_input.get())
+        try:
+            try:
+                self.a = float(self.a_interval_input.get())
+                self.b = float(self.b_interval_input.get())
 
-        # self.initial_population = int(self.initial_population_input.get())
-        # self.population_size = int(self.population_size_input.get())
-        # self.user_resolution = float(self.user_resolution_input.get())
-        # self.number_of_generations = int(self.number_of_generations_input.get())
-        # self.crossover_rate = int(self.crossover_rate_input.get())
-        # self.mutation_rate = int(self.mutation_rate_input.get())
-        # self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
-        self.maximization = self.maximization_checkbox.get()
+                if self.b - self.a < 0:
+                    # Lanzar una excepción
+                    raise Exception("error")
+            except:
+                CTkMessagebox(title="Error", message="invalid ranges", icon="cancel")
+
+            self.initial_population = int(self.initial_population_input.get())
+            self.population_size = int(self.population_size_input.get())
+            self.user_resolution = float(self.user_resolution_input.get())
+            self.number_of_generations = int(self.number_of_generations_input.get())
+            self.percent_of_elitism = int(self.crossover_percent_input.get())
+            self.mutation_rate = int(self.mutation_rate_input.get())
+            self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
+            self.maximization = self.maximization_checkbox.get()
+        except:
+            CTkMessagebox(title="Error", message="Error on some input", icon="cancel")
 
         # Calculate Params
         self.range = self.b - self.a
@@ -220,11 +234,8 @@ class App(ctk.CTk):
         self.system_resolution = self.range / ((2 ** self.bits) - 1)
 
         # Lambdyfy the function
-        # self.f = lambdify(self.x, self.function_input.get())
-        self.f = lambdify(self.x, "x * cos(x)")
-
-        plt.figure(figsize=(10, 30))
-        plt.yticks(range(math.ceil(self.f(self.a)), math.ceil(self.f(self.b)), 1))
+        self.f = lambdify(self.x, self.function_input.get())
+        # self.f = lambdify(self.x, "x * cos(x)")
 
         # Generate initial population
         for _ in range(self.initial_population):
@@ -275,8 +286,9 @@ class App(ctk.CTk):
 
     def _crossover(self):
         # Make pairs
-        best_members = self.population[:2]
-        selected_members_to_crossover = self.population[2:]
+        percent = ((self.percent_of_elitism * len(self.population)) // 100)
+        best_members = self.population[:percent]
+        selected_members_to_crossover = self.population[percent:]
 
         for selected_member in selected_members_to_crossover:
             for best_member in best_members:
