@@ -5,6 +5,7 @@ import random
 import warnings
 import threading
 import statistics
+import numpy as np
 import pandas as pd
 import customtkinter as ctk
 import matplotlib.pyplot as plt
@@ -140,11 +141,11 @@ class App(ctk.CTk):
         self.initial_population = 10
         self.population_size = 30
         self.user_resolution = 0.076
-        self.number_of_generations = 200
+        self.number_of_generations = 100
         self.crossover_rate = 60
         self.mutation_rate = 50
         self.mutation_rate_gene = 70
-        self.percent_of_elitism = 5
+        self.percent_of_elitism = 20
         self.breakpoint_line = 0
 
         # SYSTEM PARAMS
@@ -167,6 +168,10 @@ class App(ctk.CTk):
         self.worst_x_values: List[Member] = []
         self.worst_y_values: List[Member] = []
 
+        self.best_evolution_values: List[List[Member]] = []
+        self.median_evolution_values: List[Member] = []
+        self.worst_evolution_values: List[List[Member]] = []
+
         # Dataframes
         self.best_df = pd.DataFrame({"m_index": [0], "x": [0], "fitness": [0], "binary": [""]}).astype({"m_index": int, "x": float, "fitness": str, "binary": str})
         self.median_df = pd.DataFrame({"meadian": [0]}).astype({"meadian": str})
@@ -186,11 +191,19 @@ class App(ctk.CTk):
         self.canvas = ctk.CTkCanvas(self.chart_frame, bg="black")
         self.canvas.pack(expand=True, fill="both")
 
+        self.evolution_canvas = ctk.CTkCanvas(self.chart_frame, bg="black")
+        self.evolution_canvas.pack(expand=True, fill="both")
+
         self.queue = queue.Queue()
+        self.evolution_queue = queue.Queue()
 
         self.vide_thread_flag = True
         self.video_thread = threading.Thread(target=self.play_video)
         self.video_thread.start()
+
+        self.evolution_thread_flag = True
+        self.evolution_video_thread = threading.Thread(target=self.play_evolution_video)
+        self.evolution_video_thread.start()
 
     def initialization(self):
         # Reset values
@@ -204,28 +217,32 @@ class App(ctk.CTk):
         self.worst_x_values = []
         self.worst_y_values = []
 
-        # Get values from inputs
-        try:
-            try:
-                self.a = float(self.a_interval_input.get())
-                self.b = float(self.b_interval_input.get())
+        self.best_evolution_values = []
+        self.median_evolution_values = []
+        self.worst_evolution_values = []
 
-                if self.b - self.a < 0:
-                    # Lanzar una excepción
-                    raise Exception("error")
-            except:
-                CTkMessagebox(title="Error", message="invalid ranges", icon="cancel")
+        # # Get values from inputs
+        # try:
+        #     try:
+        #         self.a = float(self.a_interval_input.get())
+        #         self.b = float(self.b_interval_input.get())
 
-            self.initial_population = int(self.initial_population_input.get())
-            self.population_size = int(self.population_size_input.get())
-            self.user_resolution = float(self.user_resolution_input.get())
-            self.number_of_generations = int(self.number_of_generations_input.get())
-            self.percent_of_elitism = int(self.crossover_percent_input.get())
-            self.mutation_rate = int(self.mutation_rate_input.get())
-            self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
-            self.maximization = self.maximization_checkbox.get()
-        except:
-            CTkMessagebox(title="Error", message="Error on some input", icon="cancel")
+        #         if self.b - self.a < 0:
+        #             # Lanzar una excepción
+        #             raise Exception("error")
+        #     except:
+        #         CTkMessagebox(title="Error", message="invalid ranges", icon="cancel")
+
+        #     self.initial_population = int(self.initial_population_input.get())
+        #     self.population_size = int(self.population_size_input.get())
+        #     self.user_resolution = float(self.user_resolution_input.get())
+        #     self.number_of_generations = int(self.number_of_generations_input.get())
+        #     self.percent_of_elitism = int(self.crossover_percent_input.get())
+        #     self.mutation_rate = int(self.mutation_rate_input.get())
+        #     self.mutation_rate_gene = int(self.mutation_rate_gene_input.get())
+        self.maximization = self.maximization_checkbox.get()
+        # except:
+        #     CTkMessagebox(title="Error", message="Error on some input", icon="cancel")
 
         # Calculate Params
         self.range = self.b - self.a
@@ -234,8 +251,8 @@ class App(ctk.CTk):
         self.system_resolution = self.range / ((2 ** self.bits) - 1)
 
         # Lambdyfy the function
-        self.f = lambdify(self.x, self.function_input.get())
-        # self.f = lambdify(self.x, "x * cos(x)")
+        # self.f = lambdify(self.x, self.function_input.get())
+        self.f = lambdify(self.x, "x * cos(x)")
 
         # Generate initial population
         for _ in range(self.initial_population):
@@ -330,6 +347,17 @@ class App(ctk.CTk):
         self.population = sorted(self.population, key=lambda x: x["fitness"], reverse=self.maximization)
 
     def make_chart(self, generation, mean):
+
+        # Indice media [1, 2, 3] [3, 2, 1]
+        if self.maximization:
+            index_mean = next(i for i, d in reversed(list(enumerate(self.population))) if d["fitness"] >= mean)
+        else:
+            index_mean = next(i for i, d in reversed(list(enumerate(self.population))) if d["fitness"] <= mean)
+
+        self.best_evolution_values.append(self.population[:index_mean - 1])
+        self.worst_evolution_values.append(self.population[index_mean + 1:])
+        self.median_evolution_values.append(self.population[index_mean])
+
         self.best_x_values.append(generation)
         self.best_y_values.append(self.population[0])
 
@@ -366,12 +394,22 @@ class App(ctk.CTk):
         self.prograss_bar.set((generation / self.number_of_generations) * 100)
 
     def make_video(self):
-        fig = plt.figure(figsize=(9.5, 9))
+        fig = plt.figure(figsize=(9.3, 4.6))
         self.ax = fig.add_subplot(111)
+
+        fig2 = plt.figure(figsize=(9.3, 4.6))
+        self.ax2 = fig2.add_subplot(111)
+
+        self.x1 = np.linspace(self.a, self.b, 1000)
+        self.y1 = self.f(self.x1)
+
+        animation1 = FuncAnimation(fig2, self.second_video, frames=len(self.best_x_values), repeat=False)
+        animation1.save("final2.mp4", writer="ffmpeg")
 
         animation = FuncAnimation(fig, self.update, frames=len(self.best_x_values), repeat=False)
         animation.save("final.mp4", writer="ffmpeg")
         self.queue.put("reset")
+        self.evolution_queue.put("reset")
     
     def update(self, frame):
         self.ax.clear()
@@ -386,6 +424,39 @@ class App(ctk.CTk):
         self.ax.plot(self.median_x_values[:frame], self.median_y_values[:frame], label="Median", color="green", linestyle="-")
         self.ax.plot(self.worst_x_values[:frame], [d["fitness"] for d in self.worst_y_values[:frame]], label="Worst", color="red", linestyle="-")
         self.ax.legend(labels=["Best", "Median", "Worst"])
+
+    def second_video(self, frame: int):
+        self.ax2.clear()
+
+        self.ax2.plot(self.x1, self.y1, label="Function", color="black", linestyle="-")
+        self.ax2.scatter([d["x"] for d in self.best_evolution_values[frame]], [d["fitness"] for d in self.best_evolution_values[frame]], marker="o", color="blue", label="Best")
+        self.ax2.scatter(self.median_evolution_values[frame]["x"], self.median_evolution_values[frame]["fitness"], marker="o", color="green", label="Median")
+        self.ax2.scatter([d["x"] for d in self.worst_evolution_values[frame]], [d["fitness"] for d in self.worst_evolution_values[frame]], marker="o", color="red", label="Worst")
+
+        self.ax2.legend(labels=["Function", "Best", "Median", "Worst"])
+        self.ax2.set_xlabel("X")
+        self.ax2.set_ylabel("Fitness")
+        self.ax2.title.set_text("Population evolution")
+
+    def play_evolution_video(self):
+        while self.evolution_thread_flag:
+            command = self.evolution_queue.get()
+            if command == "reset":
+                self.cap2 = cv2.VideoCapture("final2.mp4")
+                self.update_evolution_image()
+
+    def update_evolution_image(self):
+        ret, frame = self.cap2.read()
+
+        if ret:
+            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(image)
+            image = ImageTk.PhotoImage(image)
+            self.evolution_canvas.create_image(0, 0, anchor='nw', image=image)
+
+            self.evolution_canvas.image = image
+
+        self.after(100, self.update_evolution_image)
 
     def play_video(self):
         while self.vide_thread_flag:
